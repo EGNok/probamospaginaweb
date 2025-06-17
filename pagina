@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seguimiento y Gestión de Ventas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals & Subtle Blues -->
+    <!-- Application Structure Plan: Se introduce un sistema de cuentas corrientes por cliente. La estructura de pestañas y modales se mantiene, pero la lógica de negocio subyacente se vuelve más sofisticada. Se añade un panel de "Saldos de Clientes" en la vista de Gestión para ofrecer una visión financiera completa. Este cambio transforma la aplicación de un simple registrador de ventas a un sistema de gestión de cuentas de clientes, donde las deudas y créditos se transfieren automáticamente, reflejando un flujo de trabajo empresarial más realista. -->
+    <!-- Visualization & Content Choices: 
+        - Resumen de métricas (Tarjetas): Goal: Informar. -> Viz: Tarjetas (HTML). -> Interaction: Real-time. -> Justification: KPIs.
+        - Ventas por Vendedor (Gráfico): Goal: Comparar. -> Viz: Dona (Chart.js). -> Interaction: Tooltips. -> Justification: Rendimiento visual.
+        - Formulario de Venta (Avanzado): Goal: Organizar. -> Viz: Formulario HTML. -> Interaction: Muestra el "Balance Anterior" del cliente y calcula el "Total a Pagar" ajustado. -> Justification: Proporciona transparencia total sobre cómo se aplican los saldos pendientes a las nuevas ventas.
+        - Tabla de Registros (Avanzada): Goal: Interactuar. -> Viz: Tabla HTML. -> Interaction: Botones para pagos y estado. -> Justification: Centro de control para cada venta.
+        - Modal de Pagos (Inteligente): Goal: Gestionar. -> Interaction: Al cerrar, calcula el balance final de la venta y actualiza la cuenta corriente global del cliente. -> Justification: Es el núcleo de la nueva lógica de negocio, conectando el pago de una venta con el saldo general del cliente.
+        - Gestión de Saldos de Clientes: Goal: Informar/Organizar. -> Viz: Lista HTML. -> Interaction: N/A. -> Justification: Ofrece una vista financiera crucial para el seguimiento de deudas y créditos de toda la cartera de clientes.
+        - Library/Method: Vanilla JS, Chart.js. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .chart-container { position: relative; width: 100%; max-width: 400px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
+        .tab-button[aria-selected="true"] { border-color: #3b82f6; color: #3b82f6; }
+        .modal-backdrop { transition: opacity 0.3s ease; }
+        .modal-content { transition: all 0.3s ease; }
+        .input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Panel de Seguimiento y Gestión</h1>
+            <p class="text-gray-600 mt-2">Gestiona ventas, comisiones y cuentas corrientes de clientes.</p>
+        </header>
+
+        <div class="mb-8 border-b border-gray-200">
+            <nav class="flex space-x-4" aria-label="Tabs">
+                <button id="tab-dashboard" type="button" class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm" aria-selected="true">Panel de Ventas</button>
+                <button id="tab-management" type="button" class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" aria-selected="false">Gestión</button>
+            </nav>
+        </div>
+
+        <main>
+            <div id="view-dashboard">
+                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                    <div class="stat-card bg-white p-6 rounded-xl shadow-md border"><h2 class="text-sm font-medium text-gray-500">Valor Total de Ventas</h2><p id="total-value" class="text-3xl font-bold text-blue-600 mt-2">$0</p></div>
+                    <div class="stat-card bg-white p-6 rounded-xl shadow-md border"><h2 class="text-sm font-medium text-gray-500">Total Comisiones</h2><p id="total-commissions" class="text-3xl font-bold text-purple-600 mt-2">$0</p></div>
+                    <div class="stat-card bg-white p-6 rounded-xl shadow-md border"><h2 class="text-sm font-medium text-gray-500">Cajas Vendidas</h2><p id="total-boxes" class="text-3xl font-bold text-green-600 mt-2">0</p></div>
+                    <div class="stat-card bg-white p-6 rounded-xl shadow-md border"><h2 class="text-sm font-medium text-gray-500">Entregas Pendientes</h2><p id="pending-deliveries" class="text-3xl font-bold text-amber-600 mt-2">0</p></div>
+                    <div class="stat-card bg-white p-6 rounded-xl shadow-md border"><h2 class="text-sm font-medium text-gray-500">Entregas Completadas</h2><p id="completed-deliveries" class="text-3xl font-bold text-teal-600 mt-2">0</p></div>
+                </section>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg border h-fit">
+                        <h2 class="text-2xl font-bold mb-6">Registrar Nueva Venta</h2>
+                        <form id="sale-form" class="space-y-4"></form>
+                    </div>
+                    <div class="lg:col-span-2 space-y-8">
+                        <div class="bg-white p-6 rounded-xl shadow-lg border"><h2 class="text-2xl font-bold mb-4 text-center">Ventas por Vendedor</h2><div class="chart-container"><canvas id="salesChart"></canvas></div></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg border"><h2 class="text-2xl font-bold mb-4">Historial de Ventas</h2><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendedor / Cliente</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total a Pagar</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th></tr></thead><tbody id="sales-table-body" class="bg-white divide-y divide-gray-200"></tbody></table></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-management" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div class="bg-white p-6 rounded-xl shadow-lg border">
+                        <h2 class="text-2xl font-bold mb-6">Gestionar Vendedores</h2>
+                        <form id="add-vendedor-form" class="flex items-center gap-2 mb-4"><input type="text" id="new-vendedor-name" placeholder="Nombre del nuevo vendedor" required class="input flex-grow"><button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Añadir</button></form>
+                        <h3 class="text-lg font-semibold mb-2">Vendedores Actuales</h3><ul id="vendedores-list" class="space-y-2"></ul>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-lg border">
+                        <h2 class="text-2xl font-bold mb-6">Gestionar Clientes</h2>
+                        <div><label for="manage-cliente-vendedor" class="block text-sm font-medium">Seleccionar Vendedor</label><select id="manage-cliente-vendedor" class="input mt-1 mb-4"></select></div>
+                        <div id="client-management-panel" class="hidden">
+                            <form id="add-cliente-form" class="flex items-center gap-2 mb-4"><input type="text" id="new-cliente-name" placeholder="Nombre del nuevo cliente" required class="input flex-grow"><button type="submit" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Añadir</button></form>
+                            <h3 class="text-lg font-semibold mb-2">Clientes Asignados</h3><ul id="clientes-list" class="space-y-2"></ul>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-lg border">
+                        <h2 class="text-2xl font-bold mb-6">Saldos de Clientes</h2>
+                        <ul id="customer-balances-list" class="space-y-2"></ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="payment-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-40 hidden modal-backdrop">
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div id="payment-modal-content" class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-2xl transform scale-95 opacity-0">
+                <div class="p-6"><div class="flex justify-between items-start"><h2 class="text-2xl font-bold">Gestionar Pagos de Venta</h2><button id="close-payment-modal" class="text-gray-400 hover:text-gray-600 text-3xl">&times;</button></div><div id="payment-summary" class="my-4 p-4 bg-gray-50 rounded-lg grid grid-cols-3 gap-4 text-center"></div></div>
+                <div class="px-6 pb-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div><h3 class="font-semibold mb-2">Añadir Pago en Efectivo</h3><form id="add-cash-payment-form" class="space-y-2 p-4 border rounded-lg"><div><label for="cash-amount" class="text-sm font-medium">Monto</label><input type="number" id="cash-amount" min="0" step="0.01" required class="input mt-1"></div><button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Añadir Efectivo</button></form></div>
+                    <div><h3 class="font-semibold mb-2">Añadir Pago con Cheque</h3><form id="add-check-payment-form" class="space-y-2 p-4 border rounded-lg"><div><label for="check-code" class="text-sm font-medium">Código</label><input type="text" id="check-code" required class="input mt-1"></div><div><label for="check-date" class="text-sm font-medium">Fecha</label><input type="date" id="check-date" required class="input mt-1"></div><div><label for="check-amount" class="text-sm font-medium">Valor</label><input type="number" id="check-amount" min="0" step="0.01" required class="input mt-1"></div><button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Añadir Cheque</button></form></div>
+                </div>
+                <div class="px-6 pb-6"><h3 class="font-semibold mb-2">Pagos Registrados</h3><div id="payments-list" class="max-h-40 overflow-y-auto space-y-2"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let db = {
+                vendedores: [{ id: 1, nombre: 'Juan Pérez', clientes: ['Cliente A', 'Cliente B'] },{ id: 2, nombre: 'María Gómez', clientes: ['Cliente D', 'Cliente E'] }],
+                sales: [],
+                customerBalances: {}
+            };
+            let currentEditingSaleId = null;
+            let salesChart;
+
+            const doc = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(el => [el.id.replace(/-(\w)/g, (m, p1) => p1.toUpperCase()), el]));
+            
+            const formatCurrency = (value) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(value);
+
+            function renderSaleForm() {
+                doc.saleForm.innerHTML = `
+                    <div><label for="fecha" class="block text-sm font-medium text-gray-700">Fecha</label><input type="date" id="fecha" required class="input mt-1"></div>
+                    <div><label for="vendedor" class="block text-sm font-medium text-gray-700">Vendedor</label><select id="vendedor" required class="input mt-1"></select></div>
+                    <div><label for="cliente" class="block text-sm font-medium text-gray-700">Cliente</label><select id="cliente" required class="input mt-1" disabled></select></div>
+                    <div id="balance-container" class="p-2 bg-gray-100 rounded-md hidden"><label class="block text-sm font-medium">Balance Anterior</label><p id="previous-balance" class="font-bold"></p></div>
+                    <div><label for="estado" class="block text-sm font-medium text-gray-700">Estado</label><select id="estado" required class="input mt-1"><option>Pendiente</option><option>Entregado</option></select></div>
+                    <div><label for="direccion" class="block text-sm font-medium text-gray-700">Dirección</label><input type="text" id="direccion" required class="input mt-1"></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label for="cantidad" class="block text-sm font-medium">Cajas</label><input type="number" id="cantidad" min="1" required class="input mt-1"></div>
+                        <div><label for="valor-caja" class="block text-sm font-medium">Valor/Caja</label><input type="number" id="valor-caja" min="0" step="0.01" required class="input mt-1"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                         <div><label for="comision-porcentaje" class="block text-sm font-medium">Comisión (%)</label><input type="number" id="comision-porcentaje" value="10" min="0" max="100" required class="input mt-1"></div>
+                         <div><label class="block text-sm font-medium">Valor Comisión</label><p id="valor-comision" class="mt-2 text-lg font-bold text-purple-600">$0.00</p></div>
+                    </div>
+                     <div><label class="block text-sm font-medium">Total a Pagar (ajustado)</label><p id="valor-total" class="mt-1 text-2xl font-bold text-gray-900">$0.00</p></div>
+                    <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Añadir Registro</button>
+                `;
+                ['cantidad', 'valor-caja', 'comision-porcentaje'].forEach(id => document.getElementById(id).addEventListener('input', calculateTotals));
+                document.getElementById('vendedor').addEventListener('change', updateClientes);
+                document.getElementById('cliente').addEventListener('change', calculateTotals);
+                doc.saleForm.addEventListener('submit', handleFormSubmit);
+                document.getElementById('fecha').valueAsDate = new Date();
+                updateAllVendedorSelects();
+            }
+
+            function renderAll() {
+                renderDashboard();
+                renderSalesTable();
+                renderVendedoresList();
+                renderCustomerBalances();
+                updateAllVendedorSelects();
+            }
+            
+            function renderDashboard() {
+                doc.totalValue.textContent = formatCurrency(db.sales.reduce((s, sale) => s + sale.valorTotal, 0));
+                doc.totalCommissions.textContent = formatCurrency(db.sales.reduce((s, sale) => s + sale.comisionValor, 0));
+                doc.totalBoxes.textContent = db.sales.reduce((s, sale) => s + sale.cantidad, 0);
+                doc.pendingDeliveries.textContent = db.sales.filter(s => s.estado === 'Pendiente').length;
+                doc.completedDeliveries.textContent = db.sales.filter(s => s.estado === 'Entregado').length;
+                updateChart();
+            }
+
+            function renderSalesTable() {
+                doc.salesTableBody.innerHTML = '';
+                if(db.sales.length === 0) {
+                    doc.salesTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">Aún no hay ventas.</td></tr>`;
+                    return;
+                }
+                db.sales.forEach(sale => {
+                    const row = document.createElement('tr');
+                    const estadoClass = sale.estado === 'Entregado' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800';
+                    row.innerHTML = `
+                        <td class="px-6 py-4"><div class="text-sm font-semibold">${sale.vendedor}</div><div class="text-sm text-gray-500">${sale.cliente}</div></td>
+                        <td class="px-6 py-4 text-sm font-medium">${formatCurrency(sale.totalAPagar)}</td>
+                        <td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoClass}">${sale.estado}</span></td>
+                        <td class="px-6 py-4 text-sm font-medium space-x-2">
+                           <button data-action="toggle-status" data-id="${sale.id}" class="text-blue-600 hover:text-blue-900">Entregado</button>
+                           <button data-action="manage-payments" data-id="${sale.id}" class="text-green-600 hover:text-green-900">Pagos</button>
+                        </td>`;
+                    doc.salesTableBody.appendChild(row);
+                });
+            }
+
+            function renderVendedoresList() {
+                doc.vendedoresList.innerHTML = '';
+                db.vendedores.forEach(v => {
+                    doc.vendedoresList.innerHTML += `<li class="flex justify-between items-center p-2 bg-gray-100 rounded-md text-sm"><span id="vendedor-name-${v.id}">${v.nombre}</span><div class="space-x-2"><button data-action="edit-vendedor" data-id="${v.id}" class="text-gray-500 hover:text-blue-600">&#9998;</button></div></li>`;
+                });
+            }
+
+            function renderCustomerBalances() {
+                doc.customerBalancesList.innerHTML = '';
+                const customersWithBalance = Object.keys(db.customerBalances).filter(c => db.customerBalances[c] !== 0);
+                if (customersWithBalance.length === 0) {
+                     doc.customerBalancesList.innerHTML = `<li class="text-gray-500">No hay saldos pendientes.</li>`;
+                     return;
+                }
+                customersWithBalance.forEach(customer => {
+                    const balance = db.customerBalances[customer];
+                    const balanceClass = balance > 0 ? 'text-green-600' : 'text-red-600';
+                    doc.customerBalancesList.innerHTML += `<li class="flex justify-between p-2 bg-gray-50 rounded-md"><span class="font-medium">${customer}</span><strong class="${balanceClass}">${formatCurrency(balance)}</strong></li>`;
+                });
+            }
+
+            function calculateTotals() {
+                const cantidad = parseFloat(document.getElementById('cantidad').value) || 0;
+                const valorCaja = parseFloat(document.getElementById('valor-caja').value) || 0;
+                const comisionPorcentaje = parseFloat(document.getElementById('comision-porcentaje').value) || 0;
+                
+                const clienteSeleccionado = document.getElementById('cliente').value;
+                const balanceAnterior = db.customerBalances[clienteSeleccionado] || 0;
+
+                const valorTotalVenta = cantidad * valorCaja;
+                const totalAPagar = valorTotalVenta - balanceAnterior;
+                const comision = valorTotalVenta * (comisionPorcentaje / 100);
+
+                document.getElementById('valor-total').textContent = formatCurrency(totalAPagar);
+                document.getElementById('valor-comision').textContent = formatCurrency(comision);
+                
+                const balanceContainer = document.getElementById('balance-container');
+                const previousBalanceEl = document.getElementById('previous-balance');
+                if (balanceAnterior !== 0) {
+                    previousBalanceEl.textContent = formatCurrency(balanceAnterior * -1);
+                    previousBalanceEl.className = `font-bold ${balanceAnterior > 0 ? 'text-green-600' : 'text-red-600'}`;
+                    balanceContainer.classList.remove('hidden');
+                } else {
+                    balanceContainer.classList.add('hidden');
+                }
+            }
+
+            function handleFormSubmit(event) {
+                event.preventDefault();
+                const vendedor = document.getElementById('vendedor').value;
+                const cliente = document.getElementById('cliente').value;
+                if (!vendedor || !cliente) { alert('Debe seleccionar un vendedor y un cliente.'); return; }
+                
+                const valorTotal = parseFloat(document.getElementById('valor-total').textContent.replace(/[^0-9,-]+/g,"").replace(",","."));
+                const comisionValor = parseFloat(document.getElementById('valor-comision').textContent.replace(/[^0-9,-]+/g,"").replace(",","."));
+                const balanceAnterior = db.customerBalances[cliente] || 0;
+
+                const newSale = {
+                    id: Date.now(),
+                    fecha: document.getElementById('fecha').value,
+                    vendedor, cliente,
+                    estado: document.getElementById('estado').value,
+                    direccion: document.getElementById('direccion').value,
+                    cantidad: parseInt(document.getElementById('cantidad').value),
+                    valorCaja: parseFloat(document.getElementById('valor-caja').value),
+                    comisionPorcentaje: parseFloat(document.getElementById('comision-porcentaje').value),
+                    valorTotal: (parseInt(document.getElementById('cantidad').value) || 0) * (parseFloat(document.getElementById('valor-caja').value) || 0),
+                    balanceAnterior,
+                    totalAPagar: valorTotal,
+                    comisionValor,
+                    pagos: []
+                };
+                db.sales.push(newSale);
+                db.customerBalances[cliente] = 0; // Reset balance as it's now part of the sale
+                renderAll();
+                event.target.reset();
+                document.getElementById('fecha').valueAsDate = new Date();
+                calculateTotals();
+            }
+
+            function updateAllVendedorSelects() {
+                const vendedorSelect = document.getElementById('vendedor');
+                const manageClienteVendedorSelect = doc.manageClienteVendedorSelect;
+                const currentVendedor = vendedorSelect?.value;
+                const currentManageVendedor = manageClienteVendedorSelect?.value;
+                if (vendedorSelect) vendedorSelect.innerHTML = '<option value="">Seleccione</option>';
+                if (manageClienteVendedorSelect) manageClienteVendedorSelect.innerHTML = '<option value="">Seleccione</option>';
+                db.vendedores.forEach(vendedor => {
+                    if (vendedorSelect) vendedorSelect.innerHTML += `<option value="${vendedor.nombre}">${vendedor.nombre}</option>`;
+                    if (manageClienteVendedorSelect) manageClienteVendedorSelect.innerHTML += `<option value="${vendedor.nombre}">${vendedor.nombre}</option>`;
+                });
+                if (vendedorSelect) vendedorSelect.value = db.vendedores.some(v => v.nombre === currentVendedor) ? currentVendedor : "";
+                if (manageClienteVendedorSelect) manageClienteVendedorSelect.value = db.vendedores.some(v => v.nombre === currentManageVendedor) ? currentManageVendedor : "";
+                if (vendedorSelect) updateClientes();
+            }
+
+            function updateClientes() {
+                const vendedorSeleccionado = document.getElementById('vendedor').value;
+                const clienteSelect = document.getElementById('cliente');
+                clienteSelect.innerHTML = '<option value="">Seleccione</option>';
+                clienteSelect.disabled = true;
+                if (vendedorSeleccionado) {
+                    const vendedor = db.vendedores.find(v => v.nombre === vendedorSeleccionado);
+                    if (vendedor) {
+                        vendedor.clientes.forEach(cliente => {
+                            clienteSelect.innerHTML += `<option value="${cliente}">${cliente}</option>`;
+                        });
+                        clienteSelect.disabled = false;
+                    }
+                }
+                calculateTotals();
+            }
+
+            function finishEdit(id, oldName, newName) {
+                newName = newName.trim();
+                if (newName && newName !== oldName) {
+                    const vendedor = db.vendedores.find(v => v.id === id);
+                    vendedor.nombre = newName;
+                    db.sales.forEach(sale => { if (sale.vendedor === oldName) sale.vendedor = newName; });
+                }
+                renderAll();
+            }
+
+            function openPaymentModal(saleId) {
+                currentEditingSaleId = saleId;
+                const sale = db.sales.find(s => s.id === saleId);
+                if (!sale) return;
+                renderPaymentModalContent(sale);
+                doc.paymentModal.classList.remove('hidden');
+                setTimeout(() => {
+                    doc.paymentModal.classList.remove('opacity-0');
+                    doc.paymentModalContent.classList.remove('scale-95', 'opacity-0');
+                }, 10);
+            }
+
+            function closePaymentModal() {
+                const sale = db.sales.find(s => s.id === currentEditingSaleId);
+                if (sale) {
+                    const totalPagado = sale.pagos.reduce((sum, p) => sum + p.valor, 0);
+                    const balanceFinalVenta = totalPagado - sale.totalAPagar;
+                    db.customerBalances[sale.cliente] = (db.customerBalances[sale.cliente] || 0) + balanceFinalVenta;
+                }
+                doc.paymentModalContent.classList.add('scale-95', 'opacity-0');
+                doc.paymentModal.classList.add('opacity-0');
+                setTimeout(() => {
+                    doc.paymentModal.classList.add('hidden');
+                    currentEditingSaleId = null;
+                    renderAll();
+                }, 300);
+            }
+
+            function renderPaymentModalContent(sale) {
+                const totalPagado = sale.pagos.reduce((sum, p) => sum + p.valor, 0);
+                const balance = sale.totalAPagar - totalPagado;
+                doc.paymentSummary.innerHTML = `
+                    <div><span class="block text-sm text-gray-500">Total Venta</span><strong>${formatCurrency(sale.totalAPagar)}</strong></div>
+                    <div><span class="block text-sm text-gray-500">Total Pagado</span><strong class="text-green-600">${formatCurrency(totalPagado)}</strong></div>
+                    <div><span class="block text-sm text-gray-500">Balance</span><strong class="${balance > 0 ? 'text-red-600' : ''}">${formatCurrency(balance)}</strong></div>`;
+                doc.paymentsList.innerHTML = '';
+                if(sale.pagos.length === 0) doc.paymentsList.innerHTML = '<p class="text-center text-gray-500">No hay pagos.</p>';
+                sale.pagos.forEach(p => {
+                    doc.paymentsList.innerHTML += `<div class="p-2 bg-gray-100 rounded text-sm flex justify-between"><span>${p.tipo === 'Efectivo' ? 'Efectivo' : `Cheque #${p.codigo}`}</span><strong>${formatCurrency(p.valor)}</strong></div>`;
+                });
+            }
+
+            function mainEventHandler(e) {
+                const action = e.target.dataset.action;
+                const id = e.target.dataset.id ? parseInt(e.target.dataset.id) : null;
+                if (!action) return;
+                
+                if (action === 'toggle-status') {
+                    const sale = db.sales.find(s => s.id === id);
+                    if (sale) { sale.estado = 'Entregado'; renderAll(); }
+                }
+                if (action === 'manage-payments') openPaymentModal(id);
+                if (action === 'edit-vendedor') {
+                    const nameSpan = document.getElementById(`vendedor-name-${id}`);
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = nameSpan.textContent;
+                    input.className = 'input text-sm p-1';
+                    input.onblur = () => finishEdit(id, nameSpan.textContent, input.value);
+                    input.onkeydown = (ev) => { if (ev.key === 'Enter') input.blur(); };
+                    nameSpan.replaceWith(input);
+                    input.focus();
+                }
+            }
+
+            function createChart() {
+                salesChart = new Chart(doc.salesChart.getContext('2d'), { type: 'doughnut', data: { labels: [], datasets: [{ label: 'Ventas', data: [], backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'], borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.label}: ${formatCurrency(c.parsed)}` } } } } });
+            }
+
+            function updateChart() {
+                const salesByVendedor = db.sales.reduce((acc, sale) => { acc[sale.vendedor] = (acc[sale.vendedor] || 0) + sale.valorTotal; return acc; }, {});
+                if (salesChart) {
+                    salesChart.data.labels = Object.keys(salesByVendedor);
+                    salesChart.data.datasets[0].data = Object.values(salesByVendedor);
+                    salesChart.update();
+                }
+            }
+
+            function init() {
+                renderSaleForm();
+                createChart();
+                renderAll();
+
+                doc.tabDashboard.addEventListener('click', () => {
+                    doc.viewDashboard.classList.remove('hidden');
+                    doc.viewManagement.classList.add('hidden');
+                    doc.tabDashboard.setAttribute('aria-selected', 'true');
+                    doc.tabManagement.setAttribute('aria-selected', 'false');
+                });
+                doc.tabManagement.addEventListener('click', () => {
+                    doc.viewDashboard.classList.add('hidden');
+                    doc.viewManagement.classList.remove('hidden');
+                    doc.tabDashboard.setAttribute('aria-selected', 'false');
+                    doc.tabManagement.setAttribute('aria-selected', 'true');
+                });
+
+                document.body.addEventListener('click', mainEventHandler);
+                
+                doc.addVendedorForm.addEventListener('submit', (e) => {
+                     e.preventDefault();
+                    const name = doc.newVendedorNameInput.value.trim();
+                    if (name && !db.vendedores.some(v => v.nombre.toLowerCase() === name.toLowerCase())) {
+                        db.vendedores.push({ id: Date.now(), nombre: name, clientes: [] });
+                        renderAll();
+                        doc.newVendedorNameInput.value = '';
+                    } else if (name) alert('El vendedor ya existe.');
+                });
+                doc.manageClienteVendedorSelect.addEventListener('change', () => {
+                    const selected = doc.manageClienteVendedorSelect.value;
+                    doc.clientManagementPanel.classList.toggle('hidden', !selected);
+                    if(selected) renderClientesManagement(selected);
+                });
+                doc.addClienteForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const vName = doc.manageClienteVendedorSelect.value;
+                    const cName = doc.newClienteNameInput.value.trim();
+                    const v = db.vendedores.find(ve => ve.nombre === vName);
+                    if (v && cName && !v.clientes.some(c => c.toLowerCase() === cName.toLowerCase())) {
+                        v.clientes.push(cName);
+                        renderClientesManagement(vName);
+                        doc.newClienteNameInput.value = '';
+                        updateAllVendedorSelects();
+                    }
+                });
+
+                doc.closePaymentModalBtn.addEventListener('click', closePaymentModal);
+                doc.paymentModal.addEventListener('click', (e) => { if(e.target === doc.paymentModal) closePaymentModal()});
+                doc.addCashPaymentForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const sale = db.sales.find(s => s.id === currentEditingSaleId);
+                    const amount = parseFloat(e.target.querySelector('#cash-amount').value);
+                    if (sale && amount > 0) {
+                        sale.pagos.push({ tipo: 'Efectivo', valor: amount });
+                        renderPaymentModalContent(sale);
+                        e.target.reset();
+                    }
+                });
+                doc.addCheckPaymentForm.addEventListener('submit', (e) => {
+                     e.preventDefault();
+                     const sale = db.sales.find(s => s.id === currentEditingSaleId);
+                     const amount = parseFloat(e.target.querySelector('#check-amount').value);
+                     if(sale && amount > 0) {
+                        sale.pagos.push({ tipo: 'Cheque', codigo: e.target.querySelector('#check-code').value, fecha: e.target.querySelector('#check-date').value, valor: amount });
+                        renderPaymentModalContent(sale);
+                        e.target.reset();
+                     }
+                });
+            }
+
+            init();
+        });
+    </script>
+</body>
+</html>
+
